@@ -1,0 +1,36 @@
+#!/usr/bin/env ruby
+
+require "active_support/time"
+require "active_support/core_ext/object/inclusion"
+
+reflog = `git reflog`.split("\n").first(500)
+
+regex = /(?<ref>.+?) .+?: (?<type>.+?): (?<message>.+)$/
+
+data = reflog.map do |line|
+  match = line.match(regex)
+  next if match.nil?
+  log = `git show #{match[:ref]}`
+  type = match[:type].split(" ").first
+  date = Time.parse(
+    log.split("\n").detect { |line| line.include? "Date:" }.sub(/Date: +/, "")
+  )
+  message = log.split("\n").detect { |line| line.match(/^    /) }.strip
+
+  {
+    type: type,
+    date: date,
+    message: message,
+    ref: match[:ref],
+  }
+end.compact.select do |hash|
+  hash[:date].today? &&
+    hash[:type].in?(["commit", "merge"])
+end.sort_by do |hash|
+  hash[:date]
+end.each.with_index do |hash, i|
+  date = hash[:date]
+  date_message = "#{date.hour}:#{date.min}".ljust(5)
+  type = ("[" + hash[:type] + "]").ljust(8)
+  puts "#{date_message} #{type} #{hash[:ref]} -> #{hash[:message]}"
+end
